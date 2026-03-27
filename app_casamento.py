@@ -4,7 +4,7 @@ import os
 from datetime import date
 from PIL import Image
 
-# --- CONFIGURAÇÕES DE CAMINHO DINÂMICO ---
+# --- CONFIGURAÇÕES DE CAMINHO ---
 BASE_DIR = os.getcwd()
 CSV_PATH = os.path.join(BASE_DIR, 'convidados.csv')
 PASTA_UPLOADS = os.path.join(BASE_DIR, 'fotos_convidados')
@@ -30,22 +30,15 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNÇÕES DE DADOS ---
+# --- FUNÇÕES ---
 def load_data():
-    column_names = ['id', 'nome', 'familia', 'status']
     if not os.path.exists(CSV_PATH):
-        pd.DataFrame(columns=column_names).to_csv(CSV_PATH, index=False)
-        return pd.DataFrame(columns=column_names)
-    try:
-        return pd.read_csv(CSV_PATH, dtype={'id': str})
-    except:
-        return pd.DataFrame(columns=column_names)
+        pd.DataFrame(columns=['id', 'nome', 'familia', 'status']).to_csv(CSV_PATH, index=False)
+    return pd.read_csv(CSV_PATH, dtype={'id': str})
 
 def get_wedding_msg():
     if os.path.exists(MSG_PATH):
-        try:
-            with open(MSG_PATH, "r", encoding="utf-8") as f: return f.read()
-        except: return "Sejam bem-vindos ao nosso grande dia!"
+        with open(MSG_PATH, "r", encoding="utf-8") as f: return f.read()
     return "Sejam bem-vindos ao nosso grande dia!"
 
 df = load_data()
@@ -57,140 +50,84 @@ if invite_id:
     if not familia_df.empty:
         col_l, col_m, col_r = st.columns([1, 2, 1])
         with col_m:
-            if os.path.exists(FOTO_DESTAQUE):
-                st.image(FOTO_DESTAQUE, use_container_width=True)
-            
+            if os.path.exists(FOTO_DESTAQUE): st.image(FOTO_DESTAQUE, use_container_width=True)
             st.markdown(f"<h1>Família {familia_df['familia'].iloc[0]}</h1>", unsafe_allow_html=True)
             st.markdown(f'<div class="premium-card"><div class="invite-text">{get_wedding_msg()}</div><div class="gold-divider"></div></div>', unsafe_allow_html=True)
-
-            if date.today() > DATA_LIMITE:
-                st.error("⚠️ O prazo de confirmação online encerrou.")
-            else:
-                with st.form("rsvp_form"):
-                    st.write("### Confirmar Presença")
-                    respostas = {}
-                    for idx, row in familia_df.iterrows():
-                        st.write(f"**{row['nome']}**")
-                        respostas[idx] = st.radio(f"Status para {row['nome']}:", ["Confirmado", "Recusado"], 
-                                                 index=0 if row['status'] == "Confirmado" else 1 if row['status'] == "Recusado" else 0,
-                                                 key=f"c_{idx}", label_visibility="collapsed")
-                    
-                    if st.form_submit_button("Enviar Confirmação"):
-                        for idx, status in respostas.items():
-                            df.at[idx, 'status'] = status
-                        df.to_csv(CSV_PATH, index=False)
-                        st.success("Resposta salva com sucesso! ❤️")
-                        st.balloons()
+            
+            with st.form("rsvp"):
+                st.write("### Confirmar Presença")
+                respostas = {}
+                for idx, row in familia_df.iterrows():
+                    respostas[idx] = st.radio(f"Status de **{row['nome']}**:", ["Confirmado", "Recusado"], index=0 if row['status']=="Confirmado" else 1 if row['status']=="Recusado" else 0, key=f"c_{idx}")
+                if st.form_submit_button("Confirmar"):
+                    for idx, stt in respostas.items(): df.at[idx, 'status'] = stt
+                    df.to_csv(CSV_PATH, index=False)
+                    st.success("Salvo! ❤️"); st.balloons()
             
             st.divider()
-            st.write("### 📸 Envie uma foto para nós")
-            f_up = st.file_uploader("Upload", type=["jpg", "png", "jpeg"], label_visibility="collapsed")
+            f_up = st.file_uploader("📸 Envie uma foto", type=["jpg", "png", "jpeg"])
             if f_up:
-                with open(os.path.join(PASTA_UPLOADS, f"{invite_id}_{f_up.name}"), "wb") as f:
-                    f.write(f_up.getbuffer())
-                st.toast("Foto enviada com sucesso!")
+                with open(os.path.join(PASTA_UPLOADS, f"{invite_id}_{f_up.name}"), "wb") as f: f.write(f_up.getbuffer())
+                st.toast("Foto enviada!")
     else:
-        st.error("Convite não encontrado. Verifique o link enviado.")
+        st.error("Convite não encontrado.")
 
 # --- 2. PAINEL ADMIN ---
 st.sidebar.title("💎 Admin")
 senha = st.sidebar.text_input("Senha", type="password")
 
 if senha == "casamento2026":
-    st.title("⚙️ Gestão de Convidados")
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Dashboard", "📤 Importar Lista", "📝 Editar/Inserir", "🖼️ Fotos Recebidas", "✍️ Texto Convite"])
-
-    with tab1:
-        # Lógica para detectar o link automaticamente
-        try:
-            # Tenta pegar a URL base do próprio navegador do usuário
-            detected_url = st.get_option("browser.gatherUsageStats") # Placeholder interno
-            # Fallback manual caso o deploy mude
-            st.info("💡 Os links abaixo são gerados automaticamente com base no endereço atual do site.")
-        except:
-            pass
-
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total", len(df))
-        m2.metric("Confirmados", len(df[df['status'] == "Confirmado"]))
-        m3.metric("Recusados", len(df[df['status'] == "Recusado"]))
-        m4.metric("Pendentes", len(df[df['status'] == "Pendente"]))
+    st.title("⚙️ Gestão")
+    t1, t2, t3, t4, t5 = st.tabs(["📊 Dashboard", "📤 Importar", "📝 Editar/Novo", "🖼️ Fotos", "✍️ Texto"])
+    
+    with t1:
+        # Tenta pegar o link do próprio navegador, se falhar, usa o que você digitar
+        current_url = st.text_input("Confirme o Link Base do Site (ex: https://meu-app.streamlit.app)", value="https://giljr2806-convite-casamento-gilmar-adriana-app-casamento-3qg69s.streamlit.app")
         
-        # Gerador automático de links
-        protocol = "https" # Streamlit Cloud usa HTTPS
-        # O Streamlit não dá a URL completa facilmente por segurança, então usamos um truque:
-        # Se você estiver rodando local, ele usa localhost, se for no deploy, ele tenta pegar o host.
-        # Caso precise forçar, você pode alterar 'url_base' uma única vez aqui:
-        url_base = "https://giljr2806-convite-casamento-gilmar-adriana-app-casamento-3qg69s.streamlit.app" 
-
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Confirmados", len(df[df['status'] == "Confirmado"]))
+        m2.metric("Pendentes", len(df[df['status'] == "Pendente"]))
+        m3.metric("Total", len(df))
+        
         for fam in df['familia'].unique():
             with st.expander(f"FAMÍLIA {str(fam).upper()}"):
-                for idx, row in df[df['familia'] == fam].iterrows():
-                    c1, c2, c3 = st.columns([2,1,2])
-                    c1.write(f"👤 {row['nome']}")
-                    c2.write(f"`{row['status']}`")
-                    # GERAÇÃO AUTOMÁTICA DO LINK
-                    link_final = f"{url_base}/?id={row['id']}"
-                    c3.markdown(f'<div class="link-text">{link_final}</div>', unsafe_allow_html=True)
+                link_fam = f"{current_url}/?id={df[df['familia']==fam]['id'].iloc[0]}"
+                st.markdown(f"🔗 **Link do Grupo:** `{link_fam}`")
+                st.write("---")
+                for _, row in df[df['familia'] == fam].iterrows():
+                    st.write(f"👤 {row['nome']} - `{row['status']}`")
 
-    with tab2:
-        st.subheader("Substituir Lista Atual")
-        file = st.file_uploader("Arraste seu Excel ou CSV", type=['csv', 'xlsx'])
-        if file and st.button("Confirmar Importação"):
-            df_new = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
-            df_new.to_csv(CSV_PATH, index=False)
-            st.success("Lista atualizada!"); st.rerun()
+    with t2: # Importar
+        f = st.file_uploader("Arquivo Excel/CSV", type=['csv', 'xlsx'])
+        if f and st.button("Confirmar Importação"):
+            df_n = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
+            df_n.to_csv(CSV_PATH, index=False); st.rerun()
 
-    with tab3:
-        st.subheader("🆕 Inserir Novo Grupo Familiar")
-        with st.form("novo_grupo"):
-            col_id, col_fam = st.columns(2)
-            novo_id = col_id.text_input("ID do Link (ex: familia-silva)")
-            novo_fam_nome = col_fam.text_input("Nome da Família")
-            st.write("Nomes dos integrantes (separe por vírgula):")
-            integrantes = st.text_area("Ex: Gilmar, Adriana")
-            
-            if st.form_submit_button("Criar e Salvar"):
-                if novo_id and novo_fam_nome and integrantes:
-                    lista_nomes = [n.strip() for n in integrantes.split(',') if n.strip()]
-                    novos_dados = [{'id': novo_id, 'nome': n, 'familia': novo_fam_nome, 'status': 'Pendente'} for n in lista_nomes]
-                    df = pd.concat([df, pd.DataFrame(novos_dados)], ignore_index=True)
-                    df.to_csv(CSV_PATH, index=False)
-                    st.success("Adicionado!"); st.rerun()
+    with t3: # Novo Grupo
+        with st.form("novo"):
+            id_n = st.text_input("ID do Link (ex: familia-silva)")
+            fam_n = st.text_input("Nome da Família")
+            nomes_n = st.text_area("Integrantes (separe por vírgula)")
+            if st.form_submit_button("Salvar Grupo"):
+                lista = [n.strip() for n in nomes_n.split(',') if n.strip()]
+                novos = [{'id': id_n, 'nome': n, 'familia': fam_n, 'status': 'Pendente'} for n in lista]
+                pd.concat([df, pd.DataFrame(novos)]).to_csv(CSV_PATH, index=False); st.rerun()
 
-        st.divider()
-        st.subheader("📝 Editar/Excluir")
-        nome_sel = st.selectbox("Selecione para editar:", ["Selecione..."] + df['nome'].tolist())
-        if nome_sel != "Selecione...":
-            idx_e = df[df['nome'] == nome_sel].index[0]
-            with st.form("edit_ind"):
-                enome = st.text_input("Nome", df.at[idx_e, 'nome'])
-                efam = st.text_input("Família", df.at[idx_e, 'familia'])
-                eid = st.text_input("ID", df.at[idx_e, 'id'])
-                if st.form_submit_button("Salvar"):
-                    df.at[idx_e, 'nome'], df.at[idx_e, 'familia'], df.at[idx_e, 'id'] = enome, efam, eid
-                    df.to_csv(CSV_PATH, index=False); st.rerun()
-
-    with tab4:
-        st.subheader("Fotos Recebidas")
+    with t4: # Fotos
         fotos = os.listdir(PASTA_UPLOADS)
-        if fotos:
-            cols = st.columns(4)
-            for i, f_name in enumerate(fotos):
-                with cols[i % 4]:
-                    st.image(os.path.join(PASTA_UPLOADS, f_name), use_container_width=True)
-        else:
-            st.info("Nenhuma foto ainda.")
+        cols = st.columns(4)
+        for i, f_n in enumerate(fotos):
+            cols[i%4].image(os.path.join(PASTA_UPLOADS, f_n))
 
-    with tab5:
-        st.subheader("Mensagem do Convite")
-        novo_txt = st.text_area("Texto:", get_wedding_msg(), height=200)
-        if st.button("Salvar"):
-            with open(MSG_PATH, "w", encoding="utf-8") as f: f.write(novo_txt)
-            st.success("Salvo!")
+    with t5: # Texto
+        txt_at = get_wedding_msg()
+        novo_txt = st.text_area("Texto do Convite", value=txt_at, height=200)
+        if st.button("Salvar Mensagem"):
+            with open(MSG_PATH, "w", encoding="utf-8") as f_m: f_m.write(novo_txt)
+            st.success("Texto atualizado!")
 
 else:
     if not invite_id:
-        st.markdown("<h1 style='margin-top:100px;'>Gilmar & Adriana</h1><p style='text-align:center;'>28.06.2026</p>", unsafe_allow_html=True)
+        st.markdown("<h1 style='margin-top:50px;'>Gilmar & Adriana</h1>", unsafe_allow_html=True)
         if os.path.exists(FOTO_DESTAQUE): st.image(FOTO_DESTAQUE, use_container_width=True)
-        st.info("Use o link do seu convite para confirmar.")
+        st.info("Acesse pelo seu link pessoal.")
