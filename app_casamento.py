@@ -5,7 +5,6 @@ from datetime import date
 from PIL import Image
 
 # --- CONFIGURAÇÕES DE CAMINHO DINÂMICO ---
-# Isso permite que o código funcione no seu PC e na Nuvem sem erros
 BASE_DIR = os.getcwd()
 CSV_PATH = os.path.join(BASE_DIR, 'convidados.csv')
 PASTA_UPLOADS = os.path.join(BASE_DIR, 'fotos_convidados')
@@ -13,13 +12,12 @@ FOTO_DESTAQUE = os.path.join(BASE_DIR, 'nossa_foto.jpg')
 MSG_PATH = os.path.join(BASE_DIR, 'mensagem.txt')
 DATA_LIMITE = date(2026, 5, 19) 
 
-# Criar pastas necessárias se não existirem
 if not os.path.exists(PASTA_UPLOADS):
     os.makedirs(PASTA_UPLOADS)
 
 st.set_page_config(page_title="Gilmar & Adriana 2026", layout="wide", page_icon="💍")
 
-# --- CSS PREMIUM (ESTILO LUXO) ---
+# --- CSS PREMIUM ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Lato:wght@300;400&display=swap');
@@ -101,10 +99,10 @@ senha = st.sidebar.text_input("Senha", type="password")
 
 if senha == "casamento2026":
     st.title("⚙️ Gestão de Convidados")
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Dashboard", "📤 Importar Lista", "📝 Editar/Excluir", "🖼️ Fotos Recebidas", "✍️ Texto Convite"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Dashboard", "📤 Importar Lista", "📝 Editar/Inserir", "🖼️ Fotos Recebidas", "✍️ Texto Convite"])
 
     with tab1:
-        # ATENÇÃO: Substitua pelo seu link real do Streamlit após o deploy
+        # Substitua pelo seu link real do Streamlit após o deploy
         url_site = "https://SEU-APP-AQUI.streamlit.app"
         
         m1, m2, m3, m4 = st.columns(4)
@@ -131,18 +129,53 @@ if senha == "casamento2026":
             st.success("Lista atualizada com sucesso!"); st.rerun()
 
     with tab3:
-        st.subheader("Editar Cadastro")
+        # --- SEÇÃO 1: ADICIONAR NOVO GRUPO ---
+        st.subheader("🆕 Inserir Novo Grupo Familiar")
+        with st.form("novo_grupo"):
+            col_id, col_fam = st.columns(2)
+            novo_id = col_id.text_input("ID do Link (ex: familia-silva)", help="Evite espaços, use hífens.")
+            novo_fam_nome = col_fam.text_input("Nome da Família (ex: Silva)")
+            
+            st.write("Nomes dos integrantes (um por linha):")
+            integrantes = st.text_area("Ex: Gilmar, Adriana, Maya...", help="Escreva os nomes separados por vírgula ou um por linha.")
+            
+            if st.form_submit_button("Criar Grupo e Salvar"):
+                if novo_id and novo_fam_nome and integrantes:
+                    lista_nomes = [n.strip() for n in integrantes.replace('\n', ',').split(',') if n.strip()]
+                    novos_dados = []
+                    for nome in lista_nomes:
+                        novos_dados.append({'id': novo_id, 'nome': nome, 'familia': novo_fam_nome, 'status': 'Pendente'})
+                    
+                    df_novo = pd.DataFrame(novos_dados)
+                    df_final = pd.concat([df, df_novo], ignore_index=True)
+                    df_final.to_csv(CSV_PATH, index=False)
+                    st.success(f"Família {novo_fam_nome} adicionada!")
+                    st.rerun()
+                else:
+                    st.warning("Preencha todos os campos.")
+
+        st.divider()
+
+        # --- SEÇÃO 2: EDITAR EXISTENTE ---
+        st.subheader("📝 Editar Convidado Existente")
         nome_sel = st.selectbox("Escolha o convidado:", ["Selecione..."] + df['nome'].tolist())
         if nome_sel != "Selecione...":
             idx_e = df[df['nome'] == nome_sel].index[0]
-            with st.form("edit"):
+            with st.form("edit_individual"):
                 enome = st.text_input("Nome", df.at[idx_e, 'nome'])
                 efam = st.text_input("Família", df.at[idx_e, 'familia'])
                 eid = st.text_input("ID", df.at[idx_e, 'id'])
-                if st.form_submit_button("Salvar Alterações"):
+                
+                c1, c2 = st.columns(2)
+                if c1.form_submit_button("Salvar Alterações"):
                     df.at[idx_e, 'nome'], df.at[idx_e, 'familia'], df.at[idx_e, 'id'] = enome, efam, eid
                     df.to_csv(CSV_PATH, index=False)
                     st.success("Dados atualizados!"); st.rerun()
+                if c2.form_submit_button("🗑️ Excluir Convidado"):
+                    df = df.drop(idx_e)
+                    df.to_csv(CSV_PATH, index=False)
+                    st.error("Convidado removido.")
+                    st.rerun()
 
     with tab4:
         st.subheader("Fotos enviadas pelos convidados")
