@@ -41,6 +41,7 @@ st.markdown("""
     h1, h2, h3 { font-family: 'Playfair Display', serif !important; color: #5d4a3e !important; text-align: center; }
     .premium-card { background-color: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); border: 1px solid #e8e2d6; text-align: center; margin-bottom: 20px; }
     .invite-text { font-size: 1.2rem; color: #6b5b4a; font-style: italic; white-space: pre-wrap; }
+    .name-card { background: #f9f6f2; padding: 15px; border-radius: 10px; margin-bottom: 10px; border-left: 5px solid #d4af37; }
     .link-text { font-size: 11px; color: #8e735b; background: #f9f6f2; padding: 5px; border-radius: 5px; border: 1px solid #eee; word-break: break-all; font-family: monospace; }
     </style>
     """, unsafe_allow_html=True)
@@ -61,13 +62,20 @@ if invite_id:
             
             with st.form("rsvp"):
                 st.write("### Confirmar Presença")
+                st.info("Por favor, selecione o status de cada integrante:")
                 respostas = {}
-                for idx, row in familia_df.iterrows():
-                    respostas[idx] = st.radio(f"Status de **{row['nome']}**:", ["Confirmado", "Recusado"], 
-                                             index=0 if row['status']=="Confirmado" else 1 if row['status']=="Recusado" else 0, 
-                                             key=f"c_{idx}")
                 
-                if st.form_submit_button("Confirmar Presença"):
+                for idx, row in familia_df.iterrows():
+                    st.markdown(f'<div class="name-card"><b>{row["nome"]}</b></div>', unsafe_allow_html=True)
+                    respostas[idx] = st.radio(
+                        f"Status para {row['nome']}", 
+                        ["Pendente", "Confirmado", "Não poderá ir"], 
+                        index=["Pendente", "Confirmado", "Não poderá ir"].index(row['status']),
+                        key=f"c_{idx}",
+                        label_visibility="collapsed"
+                    )
+                
+                if st.form_submit_button("Enviar Confirmação"):
                     for idx, stt in respostas.items(): 
                         df.at[idx, 'status'] = stt
                     df.to_csv(CSV_PATH, index=False)
@@ -92,25 +100,23 @@ if senha == "casamento2026":
     t1, t2, t3, t4, t5 = st.tabs(["📊 Dashboard", "📤 Importar", "📝 Editar/Inserir", "🖼️ Fotos", "✍️ Texto"])
     
     with t1:
-        try:
-            link_base_site = st.text_input("Link Base do Site:", value="https://convite-casamento-gilmar-adriana-g2ubevcjv7rhmdoxdfoc8d.streamlit.app")
-        except:
-            link_base_site = ""
+        link_base_site = st.text_input("Link Base do Site:", value="https://convite-casamento-gilmar-adriana-g2ubevcjv7rhmdoxdfoc8d.streamlit.app")
 
-        m1, m2, m3 = st.columns(3)
+        m1, m2, m3, m4 = st.columns(4)
         m1.metric("Confirmados", len(df[df['status'] == "Confirmado"]))
-        m2.metric("Pendentes", len(df[df['status'] == "Pendente"]))
-        m3.metric("Total", len(df))
+        m2.metric("Não Vão", len(df[df['status'] == "Não poderá ir"]))
+        m3.metric("Pendentes", len(df[df['status'] == "Pendente"]))
+        m4.metric("Total", len(df))
         
         if not df.empty:
-            for fam in df['familia'].unique():
+            for fam in sorted(df['familia'].unique()):
                 with st.expander(f"FAMÍLIA {str(fam).upper()}"):
                     id_da_fam = df[df['familia']==fam]['id'].iloc[0]
                     link_final = f"{link_base_site}/?id={id_da_fam}"
                     st.markdown(f"🔗 **Link para WhatsApp:**")
                     st.code(link_final)
                     st.write("---")
-                    st.write(df[df['familia']==fam][['nome', 'status']])
+                    st.table(df[df['familia']==fam][['nome', 'status']])
         else:
             st.info("Nenhum convidado cadastrado.")
 
@@ -122,10 +128,9 @@ if senha == "casamento2026":
             st.success("Lista salva!"); st.rerun()
 
     with t3:
-        # --- SUB-ABA: ADICIONAR ---
         st.subheader("🆕 Inserir Novo Grupo")
         with st.form("novo"):
-            id_n = st.text_input("ID do Link (ex: familia-silva)", help="Sem espaços")
+            id_n = st.text_input("ID do Link (ex: familia-silva)")
             fam_n = st.text_input("Nome da Família")
             nomes_n = st.text_area("Integrantes (separe por vírgula)")
             if st.form_submit_button("Salvar Novo Grupo"):
@@ -138,40 +143,29 @@ if senha == "casamento2026":
                     st.rerun()
 
         st.divider()
-
-        # --- SUB-ABA: EDITAR/EXCLUIR ---
         st.subheader("📝 Gerenciar Convidados")
         if not df.empty:
-            # Seleção de Família para facilitar
-            fam_selecionada = st.selectbox("Selecione a Família para editar:", sorted(df['familia'].unique().tolist()))
-            df_fam = df[df['familia'] == fam_selecionada]
+            fam_sel = st.selectbox("Selecione a Família para editar:", sorted(df['familia'].unique().tolist()))
+            df_fam = df[df['familia'] == fam_sel]
 
-            # Opção de Excluir o Grupo Inteiro
-            if st.button(f"🗑️ EXCLUIR GRUPO '{fam_selecionada}' INTEIRO"):
-                df = df[df['familia'] != fam_selecionada]
+            if st.button(f"🗑️ EXCLUIR GRUPO '{fam_sel}' INTEIRO"):
+                df = df[df['familia'] != fam_sel]
                 df.to_csv(CSV_PATH, index=False)
                 st.success("Grupo removido!")
                 st.rerun()
 
             st.write("---")
-            # Editar pessoas individualmente
             for idx, row in df_fam.iterrows():
-                col1, col2, col3 = st.columns([3, 1, 1])
-                novo_nome = col1.text_input(f"Nome do Integrante", value=row['nome'], key=f"edit_{idx}")
-                
-                if col2.button("💾 Salvar", key=f"save_{idx}"):
+                c1, c2, c3 = st.columns([3, 1, 1])
+                novo_nome = c1.text_input(f"Nome", value=row['nome'], key=f"e_{idx}")
+                if c2.button("💾", key=f"s_{idx}"):
                     df.at[idx, 'nome'] = novo_nome
                     df.to_csv(CSV_PATH, index=False)
-                    st.success("Nome atualizado!")
-                    st.rerun()
-                
-                if col3.button("🗑️ Excluir", key=f"del_{idx}"):
+                    st.success("Ok!")
+                if c3.button("🗑️", key=f"d_{idx}"):
                     df = df.drop(idx)
                     df.to_csv(CSV_PATH, index=False)
-                    st.error("Removido!")
                     st.rerun()
-        else:
-            st.info("Lista vazia.")
 
     with t4:
         fotos = os.listdir(PASTA_UPLOADS)
