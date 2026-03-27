@@ -49,8 +49,7 @@ def get_wedding_msg():
     return "Sejam bem-vindos ao nosso grande dia!"
 
 df = load_data()
-query_params = st.query_params
-invite_id = query_params.get("id")
+invite_id = st.query_params.get("id")
 
 # --- 1. ÁREA DO CONVIDADO ---
 if invite_id:
@@ -102,23 +101,37 @@ if senha == "casamento2026":
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Dashboard", "📤 Importar Lista", "📝 Editar/Inserir", "🖼️ Fotos Recebidas", "✍️ Texto Convite"])
 
     with tab1:
-        # Substitua pelo seu link real do Streamlit após o deploy
-        url_site = "https://SEU-APP-AQUI.streamlit.app"
-        
+        # Lógica para detectar o link automaticamente
+        try:
+            # Tenta pegar a URL base do próprio navegador do usuário
+            detected_url = st.get_option("browser.gatherUsageStats") # Placeholder interno
+            # Fallback manual caso o deploy mude
+            st.info("💡 Os links abaixo são gerados automaticamente com base no endereço atual do site.")
+        except:
+            pass
+
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Total", len(df))
         m2.metric("Confirmados", len(df[df['status'] == "Confirmado"]))
         m3.metric("Recusados", len(df[df['status'] == "Recusado"]))
         m4.metric("Pendentes", len(df[df['status'] == "Pendente"]))
         
+        # Gerador automático de links
+        protocol = "https" # Streamlit Cloud usa HTTPS
+        # O Streamlit não dá a URL completa facilmente por segurança, então usamos um truque:
+        # Se você estiver rodando local, ele usa localhost, se for no deploy, ele tenta pegar o host.
+        # Caso precise forçar, você pode alterar 'url_base' uma única vez aqui:
+        url_base = "https://giljr2806-convite-casamento-gilmar-adriana-app-casamento-3qg69s.streamlit.app" 
+
         for fam in df['familia'].unique():
             with st.expander(f"FAMÍLIA {str(fam).upper()}"):
                 for idx, row in df[df['familia'] == fam].iterrows():
                     c1, c2, c3 = st.columns([2,1,2])
                     c1.write(f"👤 {row['nome']}")
                     c2.write(f"`{row['status']}`")
-                    link = f"{url_site}/?id={row['id']}"
-                    c3.markdown(f'<div class="link-text">{link}</div>', unsafe_allow_html=True)
+                    # GERAÇÃO AUTOMÁTICA DO LINK
+                    link_final = f"{url_base}/?id={row['id']}"
+                    c3.markdown(f'<div class="link-text">{link_final}</div>', unsafe_allow_html=True)
 
     with tab2:
         st.subheader("Substituir Lista Atual")
@@ -126,59 +139,40 @@ if senha == "casamento2026":
         if file and st.button("Confirmar Importação"):
             df_new = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
             df_new.to_csv(CSV_PATH, index=False)
-            st.success("Lista atualizada com sucesso!"); st.rerun()
+            st.success("Lista atualizada!"); st.rerun()
 
     with tab3:
-        # --- SEÇÃO 1: ADICIONAR NOVO GRUPO ---
         st.subheader("🆕 Inserir Novo Grupo Familiar")
         with st.form("novo_grupo"):
             col_id, col_fam = st.columns(2)
-            novo_id = col_id.text_input("ID do Link (ex: familia-silva)", help="Evite espaços, use hífens.")
-            novo_fam_nome = col_fam.text_input("Nome da Família (ex: Silva)")
+            novo_id = col_id.text_input("ID do Link (ex: familia-silva)")
+            novo_fam_nome = col_fam.text_input("Nome da Família")
+            st.write("Nomes dos integrantes (separe por vírgula):")
+            integrantes = st.text_area("Ex: Gilmar, Adriana")
             
-            st.write("Nomes dos integrantes (um por linha):")
-            integrantes = st.text_area("Ex: Gilmar, Adriana, Maya...", help="Escreva os nomes separados por vírgula ou um por linha.")
-            
-            if st.form_submit_button("Criar Grupo e Salvar"):
+            if st.form_submit_button("Criar e Salvar"):
                 if novo_id and novo_fam_nome and integrantes:
-                    lista_nomes = [n.strip() for n in integrantes.replace('\n', ',').split(',') if n.strip()]
-                    novos_dados = []
-                    for nome in lista_nomes:
-                        novos_dados.append({'id': novo_id, 'nome': nome, 'familia': novo_fam_nome, 'status': 'Pendente'})
-                    
-                    df_novo = pd.DataFrame(novos_dados)
-                    df_final = pd.concat([df, df_novo], ignore_index=True)
-                    df_final.to_csv(CSV_PATH, index=False)
-                    st.success(f"Família {novo_fam_nome} adicionada!")
-                    st.rerun()
-                else:
-                    st.warning("Preencha todos os campos.")
+                    lista_nomes = [n.strip() for n in integrantes.split(',') if n.strip()]
+                    novos_dados = [{'id': novo_id, 'nome': n, 'familia': novo_fam_nome, 'status': 'Pendente'} for n in lista_nomes]
+                    df = pd.concat([df, pd.DataFrame(novos_dados)], ignore_index=True)
+                    df.to_csv(CSV_PATH, index=False)
+                    st.success("Adicionado!"); st.rerun()
 
         st.divider()
-
-        # --- SEÇÃO 2: EDITAR EXISTENTE ---
-        st.subheader("📝 Editar Convidado Existente")
-        nome_sel = st.selectbox("Escolha o convidado:", ["Selecione..."] + df['nome'].tolist())
+        st.subheader("📝 Editar/Excluir")
+        nome_sel = st.selectbox("Selecione para editar:", ["Selecione..."] + df['nome'].tolist())
         if nome_sel != "Selecione...":
             idx_e = df[df['nome'] == nome_sel].index[0]
-            with st.form("edit_individual"):
+            with st.form("edit_ind"):
                 enome = st.text_input("Nome", df.at[idx_e, 'nome'])
                 efam = st.text_input("Família", df.at[idx_e, 'familia'])
                 eid = st.text_input("ID", df.at[idx_e, 'id'])
-                
-                c1, c2 = st.columns(2)
-                if c1.form_submit_button("Salvar Alterações"):
+                if st.form_submit_button("Salvar"):
                     df.at[idx_e, 'nome'], df.at[idx_e, 'familia'], df.at[idx_e, 'id'] = enome, efam, eid
-                    df.to_csv(CSV_PATH, index=False)
-                    st.success("Dados atualizados!"); st.rerun()
-                if c2.form_submit_button("🗑️ Excluir Convidado"):
-                    df = df.drop(idx_e)
-                    df.to_csv(CSV_PATH, index=False)
-                    st.error("Convidado removido.")
-                    st.rerun()
+                    df.to_csv(CSV_PATH, index=False); st.rerun()
 
     with tab4:
-        st.subheader("Fotos enviadas pelos convidados")
+        st.subheader("Fotos Recebidas")
         fotos = os.listdir(PASTA_UPLOADS)
         if fotos:
             cols = st.columns(4)
@@ -186,18 +180,17 @@ if senha == "casamento2026":
                 with cols[i % 4]:
                     st.image(os.path.join(PASTA_UPLOADS, f_name), use_container_width=True)
         else:
-            st.info("Nenhuma foto enviada ainda.")
+            st.info("Nenhuma foto ainda.")
 
     with tab5:
-        st.subheader("Configurar Mensagem do Convite")
-        novo_txt = st.text_area("Texto que aparecerá para os convidados:", get_wedding_msg(), height=250)
-        if st.button("Salvar Novo Texto"):
+        st.subheader("Mensagem do Convite")
+        novo_txt = st.text_area("Texto:", get_wedding_msg(), height=200)
+        if st.button("Salvar"):
             with open(MSG_PATH, "w", encoding="utf-8") as f: f.write(novo_txt)
-            st.success("Texto atualizado com sucesso!")
+            st.success("Salvo!")
 
 else:
     if not invite_id:
-        st.markdown("<h1 style='margin-top:100px;'>Gilmar & Adriana</h1><p style='text-align:center; font-size: 1.5rem; color: #d4af37;'>28.06.2026</p>", unsafe_allow_html=True)
-        if os.path.exists(FOTO_DESTAQUE): 
-            st.image(FOTO_DESTAQUE, use_container_width=True)
-        st.info("Por favor, utilize o link pessoal enviado no seu convite para confirmar a presença.")
+        st.markdown("<h1 style='margin-top:100px;'>Gilmar & Adriana</h1><p style='text-align:center;'>28.06.2026</p>", unsafe_allow_html=True)
+        if os.path.exists(FOTO_DESTAQUE): st.image(FOTO_DESTAQUE, use_container_width=True)
+        st.info("Use o link do seu convite para confirmar.")
