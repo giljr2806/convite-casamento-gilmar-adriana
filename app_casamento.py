@@ -15,12 +15,15 @@ if not os.path.exists(PASTA_UPLOADS):
 
 st.set_page_config(page_title="Gilmar & Adriana 2026", layout="wide", page_icon="💍")
 
-# --- FUNÇÃO DE LEITURA (SEM CACHE PARA EVITAR ERRO DE CONTAGEM) ---
+# --- FUNÇÃO DE LEITURA (FORÇANDO ATUALIZAÇÃO) ---
 def load_data_fresh():
     if not os.path.exists(CSV_PATH):
         pd.DataFrame(columns=['id', 'nome', 'familia', 'status']).to_csv(CSV_PATH, index=False)
-    # Lemos o CSV sem cache para garantir que exclusões reflitam nos números imediatamente
     return pd.read_csv(CSV_PATH, dtype={'id': str})
+
+def save_data(df_to_save):
+    df_to_save.to_csv(CSV_PATH, index=False)
+    st.cache_data.clear() # Limpa a memória do Streamlit
 
 def get_wedding_msg():
     if os.path.exists(MSG_PATH):
@@ -29,10 +32,6 @@ def get_wedding_msg():
         except: return "Sejam bem-vindos ao nosso grande dia!"
     return "Sejam bem-vindos ao nosso grande dia!"
 
-# Carregamento inicial
-df = load_data_fresh()
-invite_id = st.query_params.get("id")
-
 # --- CSS PREMIUM ---
 st.markdown("""
     <style>
@@ -40,10 +39,12 @@ st.markdown("""
     .stApp { background-color: #fdfbf7; font-family: 'Lato', sans-serif; }
     h1, h2, h3 { font-family: 'Playfair Display', serif !important; color: #5d4a3e !important; text-align: center; }
     .premium-card { background-color: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); border: 1px solid #e8e2d6; margin-bottom: 20px; }
-    .invite-text { font-size: 1.2rem; color: #6b5b4a; font-style: italic; text-align: center; white-space: pre-wrap; }
     .name-row { background: #f9f6f2; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 5px solid #d4af37; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
+
+df = load_data_fresh()
+invite_id = st.query_params.get("id")
 
 # --- 1. ÁREA DO CONVIDADO ---
 if invite_id:
@@ -69,89 +70,82 @@ if invite_id:
                 if st.form_submit_button("Enviar Resposta"):
                     for idx, status in respostas.items():
                         df.at[idx, 'status'] = status
-                    df.to_csv(CSV_PATH, index=False)
+                    save_data(df)
                     st.success("Resposta salva! ❤️"); st.balloons()
     else:
         st.error("Convite não encontrado.")
 
 # --- 2. PAINEL ADMIN ---
 st.sidebar.title("💎 Admin")
-if st.sidebar.button("🔄 Forçar Atualização Geral"):
-    st.cache_data.clear()
-    st.rerun()
-
 senha = st.sidebar.text_input("Senha", type="password")
 
 if senha == "casamento2026":
     st.title("⚙️ Gestão de Convidados")
-    t1, t2, t3, t4, t5 = st.tabs(["📊 Dashboard", "📤 Importar", "📝 Editar/Inserir", "🖼️ Fotos", "✍️ Texto"])
+    t1, t2, t3, t4, t5 = st.tabs(["📊 Dashboard", "📤 Importar", "📝 Novo Grupo", "🖼️ Fotos", "✍️ Texto"])
     
     with t1:
-        # Lemos os dados novamente aqui para garantir precisão nas métricas
-        df_metrics = load_data_fresh()
+        # Forçamos a leitura aqui para o Dashboard estar sempre certo
+        df_dash = load_data_fresh()
         
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Confirmados ✅", len(df_metrics[df_metrics['status'] == "Confirmado"]))
-        c2.metric("Não Vão ❌", len(df_metrics[df_metrics['status'] == "Não poderá ir"]))
-        c3.metric("Pendentes ⏳", len(df_metrics[df_metrics['status'] == "Pendente"]))
-        c4.metric("Total na Lista 👥", len(df_metrics))
+        c1.metric("Confirmados ✅", len(df_dash[df_dash['status'] == "Confirmado"]))
+        c2.metric("Não Vão ❌", len(df_dash[df_dash['status'] == "Não poderá ir"]))
+        c3.metric("Pendentes ⏳", len(df_dash[df_dash['status'] == "Pendente"]))
+        c4.metric("Total 👥", len(df_dash))
         
         st.write("---")
         link_base = st.text_input("Link do Site:", value="https://convite-casamento-gilmar-adriana-g2ubevcjv7rhmdoxdfoc8d.streamlit.app")
         
-        for fam in sorted(df_metrics['familia'].unique()):
-            with st.expander(f"GRUPO: {str(fam).upper()}"):
-                id_f = df_metrics[df_metrics['familia']==fam]['id'].iloc[0]
+        for fam in sorted(df_dash['familia'].unique()):
+            with st.expander(f"📁 GRUPO: {str(fam).upper()}"):
+                id_f = df_dash[df_dash['familia']==fam]['id'].iloc[0]
                 st.code(f"{link_base}/?id={id_f}")
-                st.table(df_metrics[df_metrics['familia'] == fam][['nome', 'status']])
+                
+                # Listar integrantes com botão de excluir ao lado
+                for idx, row in df_dash[df_dash['familia'] == fam].iterrows():
+                    col_n, col_s, col_del = st.columns([3, 1, 1])
+                    col_n.write(f"👤 {row['nome']}")
+                    col_s.write(f"`{row['status']}`")
+                    if col_del.button("🗑️", key=f"del_ind_{idx}", help="Excluir este integrante"):
+                        df_dash = df_dash.drop(idx)
+                        save_data(df_dash)
+                        st.rerun()
+                
+                st.write("---")
+                if st.button(f"❌ EXCLUIR FAMÍLIA {fam.upper()} INTEIRA", key=f"del_fam_{fam}"):
+                    df_dash = df_dash[df_dash['familia'] != fam]
+                    save_data(df_dash)
+                    st.rerun()
 
     with t2:
         f = st.file_uploader("Subir Lista", type=['csv', 'xlsx'])
         if f and st.button("Substituir Lista Atual"):
             df_n = pd.read_csv(f) if f.name.endswith('.csv') else pd.read_excel(f)
-            df_n.to_csv(CSV_PATH, index=False)
-            st.success("Lista atualizada com sucesso!"); st.rerun()
+            save_data(df_n)
+            st.success("Lista atualizada!"); st.rerun()
 
     with t3:
-        st.subheader("Gerenciar Grupos e Nomes")
-        # Novo grupo
+        st.subheader("Inserir Novo Grupo")
         with st.form("new_g"):
             c_id, c_fam = st.columns(2)
-            nid = c_id.text_input("ID do Link")
+            nid = c_id.text_input("ID do Link (ex: familia-silva)")
             nfam = c_fam.text_input("Nome da Família")
             nnome = st.text_area("Nomes (separe por vírgula)")
             if st.form_submit_button("Criar Grupo"):
                 lista = [n.strip() for n in nnome.split(',') if n.strip()]
                 novos = [{'id': nid, 'nome': n, 'familia': nfam, 'status': 'Pendente'} for n in lista]
-                pd.concat([df, pd.DataFrame(novos)], ignore_index=True).to_csv(CSV_PATH, index=False)
+                df_atual = load_data_fresh()
+                df_final = pd.concat([df_atual, pd.DataFrame(novos)], ignore_index=True)
+                save_data(df_final)
                 st.success("Criado!"); st.rerun()
 
-        st.divider()
-        if not df.empty:
-            fam_sel = st.selectbox("Selecione para editar/excluir:", sorted(df['familia'].unique()))
-            
-            if st.button(f"🗑️ EXCLUIR TODOS DA FAMÍLIA {fam_sel}"):
-                df_clean = df[df['familia'] != fam_sel]
-                df_clean.to_csv(CSV_PATH, index=False)
-                st.warning("Grupo removido!"); st.rerun()
-
-            for idx, row in df[df['familia'] == fam_sel].iterrows():
-                col1, col2, col3 = st.columns([3, 1, 1])
-                new_name = col1.text_input("Nome", value=row['nome'], key=f"edit_{idx}")
-                if col2.button("💾", key=f"s_{idx}"):
-                    df.at[idx, 'nome'] = new_name
-                    df.to_csv(CSV_PATH, index=False); st.success("Salvo!")
-                if col3.button("🗑️", key=f"d_{idx}"):
-                    df_final = df.drop(idx)
-                    df_final.to_csv(CSV_PATH, index=False); st.rerun()
-
-    with t4: # Mural
+    with t4:
         fotos = [f for f in os.listdir(PASTA_UPLOADS) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
         cols = st.columns(4)
         for i, f in enumerate(fotos):
             cols[i%4].image(os.path.join(PASTA_UPLOADS, f))
 
-    with t5: # Texto
+    with t5:
         t_conv = st.text_area("Mensagem", get_wedding_msg(), height=200)
         if st.button("Salvar Mensagem"):
             with open(MSG_PATH, "w", encoding="utf-8") as file: file.write(t_conv)
@@ -160,4 +154,4 @@ if senha == "casamento2026":
 else:
     if not invite_id:
         st.markdown("<h1 style='margin-top:100px;'>Gilmar & Adriana</h1>", unsafe_allow_html=True)
-        st.info("Acesse pelo seu link pessoal.")
+        st.info("Acesse pelo link pessoal enviado no WhatsApp.")
