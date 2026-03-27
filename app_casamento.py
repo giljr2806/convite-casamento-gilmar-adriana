@@ -25,7 +25,9 @@ def load_data():
 
 def get_wedding_msg():
     if os.path.exists(MSG_PATH):
-        with open(MSG_PATH, "r", encoding="utf-8") as f: return f.read()
+        try:
+            with open(MSG_PATH, "r", encoding="utf-8") as f: return f.read()
+        except: return "Sejam bem-vindos ao nosso grande dia!"
     return "Sejam bem-vindos ao nosso grande dia!"
 
 df = load_data()
@@ -45,7 +47,6 @@ st.markdown("""
 
 # --- 1. ÁREA DO CONVIDADO ---
 if invite_id:
-    # Remove qualquer espaço extra do ID
     invite_id = str(invite_id).strip()
     familia_df = df[df['id'] == invite_id]
     
@@ -88,16 +89,10 @@ senha = st.sidebar.text_input("Senha", type="password")
 
 if senha == "casamento2026":
     st.title("⚙️ Gestão de Convidados")
-    t1, t2, t3, t4, t5 = st.tabs(["📊 Dashboard", "📤 Importar", "📝 Novo Grupo", "🖼️ Fotos", "✍️ Texto"])
+    t1, t2, t3, t4, t5 = st.tabs(["📊 Dashboard", "📤 Importar", "📝 Editar/Inserir", "🖼️ Fotos", "✍️ Texto"])
     
     with t1:
-        # LÓGICA INTELIGENTE: Pega a URL do navegador automaticamente
-        # Se não conseguir (rodando local), usa uma string vazia
         try:
-            # Captura a URL base ignorando os parâmetros após a interrogação
-            base_url = st.query_params.get("dummy_val", "https://") 
-            # Como o Streamlit esconde a URL real, o melhor é detectar via JS ou usar o link fixo
-            # Deixei um campo editável aqui para você confirmar o link base se precisar:
             link_base_site = st.text_input("Link Base do Site:", value="https://convite-casamento-gilmar-adriana-g2ubevcjv7rhmdoxdfoc8d.streamlit.app")
         except:
             link_base_site = ""
@@ -110,11 +105,8 @@ if senha == "casamento2026":
         if not df.empty:
             for fam in df['familia'].unique():
                 with st.expander(f"FAMÍLIA {str(fam).upper()}"):
-                    # Pega o ID daquela família
                     id_da_fam = df[df['familia']==fam]['id'].iloc[0]
-                    # Gera o link final
                     link_final = f"{link_base_site}/?id={id_da_fam}"
-                    
                     st.markdown(f"🔗 **Link para WhatsApp:**")
                     st.code(link_final)
                     st.write("---")
@@ -130,7 +122,8 @@ if senha == "casamento2026":
             st.success("Lista salva!"); st.rerun()
 
     with t3:
-        st.subheader("Adicionar manualmente")
+        # --- SUB-ABA: ADICIONAR ---
+        st.subheader("🆕 Inserir Novo Grupo")
         with st.form("novo"):
             id_n = st.text_input("ID do Link (ex: familia-silva)", help="Sem espaços")
             fam_n = st.text_input("Nome da Família")
@@ -139,9 +132,46 @@ if senha == "casamento2026":
                 if id_n and nomes_n:
                     lista = [n.strip() for n in nomes_n.split(',') if n.strip()]
                     novos = [{'id': id_n, 'nome': n, 'familia': fam_n, 'status': 'Pendente'} for n in lista]
-                    pd.concat([df, pd.DataFrame(novos)]).to_csv(CSV_PATH, index=False)
+                    df_updated = pd.concat([df, pd.DataFrame(novos)], ignore_index=True)
+                    df_updated.to_csv(CSV_PATH, index=False)
                     st.success("Grupo adicionado!")
                     st.rerun()
+
+        st.divider()
+
+        # --- SUB-ABA: EDITAR/EXCLUIR ---
+        st.subheader("📝 Gerenciar Convidados")
+        if not df.empty:
+            # Seleção de Família para facilitar
+            fam_selecionada = st.selectbox("Selecione a Família para editar:", sorted(df['familia'].unique().tolist()))
+            df_fam = df[df['familia'] == fam_selecionada]
+
+            # Opção de Excluir o Grupo Inteiro
+            if st.button(f"🗑️ EXCLUIR GRUPO '{fam_selecionada}' INTEIRO"):
+                df = df[df['familia'] != fam_selecionada]
+                df.to_csv(CSV_PATH, index=False)
+                st.success("Grupo removido!")
+                st.rerun()
+
+            st.write("---")
+            # Editar pessoas individualmente
+            for idx, row in df_fam.iterrows():
+                col1, col2, col3 = st.columns([3, 1, 1])
+                novo_nome = col1.text_input(f"Nome do Integrante", value=row['nome'], key=f"edit_{idx}")
+                
+                if col2.button("💾 Salvar", key=f"save_{idx}"):
+                    df.at[idx, 'nome'] = novo_nome
+                    df.to_csv(CSV_PATH, index=False)
+                    st.success("Nome atualizado!")
+                    st.rerun()
+                
+                if col3.button("🗑️ Excluir", key=f"del_{idx}"):
+                    df = df.drop(idx)
+                    df.to_csv(CSV_PATH, index=False)
+                    st.error("Removido!")
+                    st.rerun()
+        else:
+            st.info("Lista vazia.")
 
     with t4:
         fotos = os.listdir(PASTA_UPLOADS)
